@@ -1,0 +1,28 @@
+# Directorios de dependencias
+node_modules/
+__pycache__/
+*.pyc
+
+# Archivos de entorno y configuración local
+.env
+.env.*
+*.env
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Directorios de desarrollo
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Archivos de log
+*.log
+logs/
+
+# Archivos temporales
+*.tmp
+*.temp
+.cache/

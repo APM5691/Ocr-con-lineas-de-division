@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>OCR Cutter Tool</title>
+    <script src="{{ url_for('static', filename='js/annotate.js') }}"></script>
+    <style>
+      .page-container {
+        margin-bottom: 30px;
+      }
+      img {
+        max-width: 80%;
+        border: 1px solid #ccc;
+        cursor: crosshair;
+      }
+      .line {
+        position: absolute;
+        width: 2px;
+        background: red;
+      }
+    </style>
+    <link
+      rel="stylesheet"
+      href="{{url_for('static',filename='dist/output.css')}}"
+    />
+  </head>
+  <body>
+    <h1 class="text-3xl font-bold text-center my-6">
+      Subir PDF para marcar líneas
+    </h1>
+
+    <form
+      method="POST"
+      enctype="multipart/form-data"
+      class="flex flex-col items-center gap-4 mb-6"
+    >
+      <input
+        type="file"
+        name="file"
+        accept="application/pdf"
+        class="border border-gray-300 rounded px-4 py-2 w-80 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <input
+        type="submit"
+        value="Subir PDF"
+        class="bg-blue-500 text-white font-semibold px-6 py-2 rounded hover:bg-blue-600 transition-colors cursor-pointer"
+      />
+    </form>
+
+    {% if images %}
+    <h2 class="text-2xl font-semibold text-center mb-4">
+      Haz clic en las imágenes para agregar líneas verticales
+    </h2>
+    <div class="flex justify-center mb-6">
+      <button
+        onclick="saveLines('{{ pdfname }}')"
+        class="bg-green-500 text-white font-semibold px-6 py-2 rounded hover:bg-green-600 transition-colors"
+      >
+        Guardar líneas
+      </button>
+    </div>
+
+    <div
+      id="pages"
+      class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4"
+    >
+      {% for img in images %}
+      <div class="page-container border rounded shadow p-4 bg-white">
+        <h3 class="text-lg font-medium mb-2 text-center">{{ img }}</h3>
+        <div class="relative inline-block">
+          <img
+            src="{{ url_for('static', filename='uploads/' + img.split('/')[-1]) }}"
+            onclick="addLine(event, '{{ img.split('/')[-1] }}')"
+            class="cursor-pointer rounded border border-gray-200 hover:shadow-lg transition-shadow"
+          />
+          <div id="lines-{{ img.split('/')[-1] }}"></div>
+        </div>
+        <div class="flex justify-center mt-2">
+          <button
+            onclick="replicateLines('{{ img.split('/')[-1] }}')"
+            class="bg-yellow-500 text-white px-4 py-1 rounded hover:bg-yellow-600 transition-colors text-sm"
+          >
+            Replicar líneas a todas
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </body>
+</html>

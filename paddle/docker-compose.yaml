@@ -1,0 +1,26 @@
+
+services:
+  jupyter:
+    image: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+    container_name: jupyter-pytorch-runpod
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./workspace:/workspace
+    working_dir: /workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - TZ=America/Mexico_City
+      - JUPYTER_TOKEN=          # vacío para no pedir token
+      - JUPYTER_ENABLE_LAB=yes  # asegura que se abra JupyterLab
+    command: >
+      bash -c "pip install --quiet ipywidgets matplotlib pandas numpy &&
+               jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+               --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace"
