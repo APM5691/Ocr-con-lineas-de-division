@@ -1,44 +1,34 @@
-
 services:
-  ocr_web:
-    build: 
-      context: ./ocr
-      dockerfile: Dockerfile
-    container_name: ocr-web
-    restart: unless-stopped
+  # jupyter_pytorch:
+  #   image: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+  #   container_name: jupyter-pytorch
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8888:8888"
+  #   volumes:
+  #     - ./paddle/workspace:/workspace
+  #   working_dir: /workspace
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   environment:
+  #     - TZ=America/Mexico_City
+  #     - JUPYTER_TOKEN=
+  #     - JUPYTER_ENABLE_LAB=yes
+  #   command: >
+  #     bash -c "pip install --quiet ipywidgets matplotlib pandas numpy &&
+  #              jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+  #              --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace"
+  backend:
+    build: backend/.
     ports:
       - "8000:8000"
     volumes:
-      - ./ocr/static:/app/static
+      - ./backend/storage:/app/storage
+      - ./backend/main.py:/app/main.py
     environment:
-      - TZ=America/Mexico_City
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  jupyter_pytorch:
-    image: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
-    container_name: jupyter-pytorch
-    restart: unless-stopped
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./paddle/workspace:/workspace
-    working_dir: /workspace
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      - TZ=America/Mexico_City
-      - JUPYTER_TOKEN=
-      - JUPYTER_ENABLE_LAB=yes
-    command: >
-      bash -c "pip install --quiet ipywidgets matplotlib pandas numpy &&
-               jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
-               --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace"
+      - PYTHONUNBUFFERED=1

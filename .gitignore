@@ -11,3 +11,17 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+data/
+data/*
+
+baja_calidad/
+baja_calidad/*
+
+originales/
+originales/*
+
+procesadas/
+procesadas/*
+
+uploads/
+uploads/*
