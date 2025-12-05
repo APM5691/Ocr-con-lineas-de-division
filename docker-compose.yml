@@ -1,34 +1,66 @@
 services:
-  # jupyter_pytorch:
-  #   image: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
-  #   container_name: jupyter-pytorch
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8888:8888"
-  #   volumes:
-  #     - ./paddle/workspace:/workspace
-  #   working_dir: /workspace
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
-  #   environment:
-  #     - TZ=America/Mexico_City
-  #     - JUPYTER_TOKEN=
-  #     - JUPYTER_ENABLE_LAB=yes
-  #   command: >
-  #     bash -c "pip install --quiet ipywidgets matplotlib pandas numpy &&
-  #              jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
-  #              --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace"
+  # Backend OCR (FastAPI) - Puerto 5000
   backend:
-    build: backend/.
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ocr-backend
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "5000:5000"
     volumes:
       - ./backend/storage:/app/storage
-      - ./backend/main.py:/app/main.py
+      - ./data:/app/static
+    working_dir: /app
     environment:
+      - TZ=America/Mexico_City
+      - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
+
+  # Paddle OCR con Jupyter (GPU + API) - Puerto 8000 y 8888
+  paddle:
+    build:
+      context: ./paddle
+      dockerfile: Dockerfile
+    container_name: paddle-ocr-workspace
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "8888:8888"
+    volumes:
+      - ./paddle/workspace:/workspace
+      - ./paddle/uploads:/workspace/uploads
+      - ./paddle/outputs:/workspace/outputs
+    working_dir: /workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - TZ=America/Mexico_City
+      - JUPYTER_TOKEN=
+      - JUPYTER_ENABLE_LAB=yes
+      - PYTHONUNBUFFERED=1
+    command: >
+      bash -c "pip install --quiet paddleocr paddlepaddle-gpu &&
+               jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+               --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace &
+               uvicorn app.api:app --host 0.0.0.0 --port 8000"
+
+  # Frontend (Nginx) - Puerto 80
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ocr-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - paddle
+    environment:
+      - TZ=America/Mexico_City
