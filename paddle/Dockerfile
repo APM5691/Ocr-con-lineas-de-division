@@ -44,15 +44,14 @@ RUN mkdir -p /workspace/app /workspace/notebooks /workspace/data /workspace/uplo
     chmod -R 777 /workspace
 
 # Expone puertos:
-# 8888 → Jupyter
-# 8000 → FastAPI
-EXPOSE 8888 8000
+# 8000 → FastAPI (OCR API)
+# 8888 → Jupyter (opcional, solo desarrollo)
+EXPOSE 8000 8888
 
 # Variables de entorno
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/workspace
 ENV JUPYTER_ENABLE_LAB=yes
 
-
-# Comando por defecto: inicia JupyterLab sin token
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--allow-root", "--no-browser", "--NotebookApp.token=", "--NotebookApp.password="]
+# Comando por defecto: inicia FastAPI con Uvicorn
+CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]

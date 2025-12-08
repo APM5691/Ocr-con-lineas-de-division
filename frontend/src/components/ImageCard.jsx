@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { useLinesStore } from '../hooks/useLinesStore';
+import { getBackendURL } from '../config';
 
 function ImageCard({ filename }) {
   const canvasRef = useRef(null);
@@ -10,9 +11,7 @@ function ImageCard({ filename }) {
   
   const imageLines = useLinesStore((state) => state.lines[filename]) || [];
   const { addLine, removeLine, updateLine, replicateLines } = useLinesStore();
-
-  console.log('ImageCard render:', filename, imageLines);
-  const imageUrl = `http://localhost:8000/api/images/${filename}`;
+  const imageUrl = getBackendURL(`/api/images/${filename}`);
 
 useEffect(() => {
   if (!imgLoaded) return;

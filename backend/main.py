@@ -9,6 +9,9 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import os
+import gc
 
 
 app = FastAPI(title="PDF OCR Lines Manager", version="1.0.0")
@@ -30,6 +33,52 @@ UPLOADS_PATH.mkdir(exist_ok=True)
 PROJECTS_PATH.mkdir(exist_ok=True)
 
 current_project = None
+
+def process_image(image_data):
+    """
+    Procesa una imagen individual: guarda original y versión reducida
+    Esta función se ejecuta en procesos separados (sin bloqueos de GIL)
+    
+    Args:
+        image_data: tuple (page_num, img_original, originales_path, baja_calidad_path)
+    
+    Returns:
+        tuple (filename, success, error_msg)
+    """
+    try:
+        page_num, img_original, originales_path_str, baja_calidad_path_str = image_data
+        
+        originales_path = Path(originales_path_str)
+        baja_calidad_path = Path(baja_calidad_path_str)
+        
+        original_filename = f"img_{page_num:03d}.jpg"
+        
+        # Guardar original en alta calidad (98% JPEG quality)
+        original_file_path = originales_path / original_filename
+        img_original.save(str(original_file_path), "JPEG", quality=98)
+        
+        # Liberar memoria de la imagen original inmediatamente
+        img_original.close()
+        
+        # Crear versión de baja calidad para frontend (más rápida de cargar)
+        max_width = 800
+        width_percent = max_width / img_original.width if img_original.width > 0 else 1
+        new_height = max(1, int(img_original.height * width_percent)) if img_original.height > 0 else 800
+        
+        # Cargar imagen desde disco (ya guardada) para procesamiento de baja calidad
+        temp_img = Image.open(original_file_path)
+        img_baja = temp_img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+        
+        baja_file_path = baja_calidad_path / original_filename
+        img_baja.save(str(baja_file_path), "JPEG", quality=55)
+        
+        img_baja.close()
+        temp_img.close()
+        
+        return (original_filename, True, None)
+    
+    except Exception as e:
+        return (None, False, str(e))
 
 class LinesData(BaseModel):
     lines: dict
@@ -67,6 +116,8 @@ async def upload_pdf(file: UploadFile = File(...)):
         project_name = f"proyecto_{timestamp}"
         project_path = PROJECTS_PATH / project_name
         
+        print(f"Procesando PDF: {file.filename} como proyecto '{project_name}'")
+        
         # Crear estructura de carpetas
         baja_calidad_path = project_path / "baja_calidad"
         originales_path = project_path / "originales"
@@ -81,24 +132,62 @@ async def upload_pdf(file: UploadFile = File(...)):
         with open(pdf_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Convertir PDF a imágenes con alta calidad (300 DPI)
-        images = convert_from_path(pdf_path, dpi=300)
+        # Convertir PDF a imágenes con alta calidad (150 DPI - balance calidad/velocidad)
+        print(f"Convirtiendo PDF a imágenes (150 DPI)...")
+        
+        try:
+            # Usar 150 DPI en lugar de 300 (más rápido, sigue siendo alta calidad)
+            images = convert_from_path(pdf_path, dpi=150, fmt='jpeg')
+            print(f"✓ PDF convertido a {len(images)} imágenes")
+        except Exception as e:
+            print(f"✗ Error al convertir PDF: {str(e)}")
+            raise HTTPException(500, f"Error convirtiendo PDF: {str(e)}")
+        
         image_list = []
         
-        for page_num, img_original in enumerate(images, start=1):
-            original_filename = f"img_{page_num:03d}.jpg"
+        # Preparar datos para procesamiento en lotes
+        num_workers = min(os.cpu_count() or 4, 4)  # Limitar a máximo 4 para no saturar memoria
+        batch_size = max(5, os.cpu_count() or 4)  # Procesar en lotes pequeños
+        
+        print(f"Total: {len(images)} imágenes")
+        print(f"Procesando en lotes de {batch_size} con {num_workers} workers...")
+        
+        # Procesar en lotes para no saturar memoria
+        for batch_start in range(0, len(images), batch_size):
+            batch_end = min(batch_start + batch_size, len(images))
+            batch = images[batch_start:batch_end]
             
-            # Guardar original en alta calidad (95% JPEG quality)
-            img_original.save(originales_path / original_filename, "JPEG", quality=95)
+            print(f"\n📦 Procesando lote: imágenes {batch_start + 1} a {batch_end}...")
             
-            # Crear versión de baja calidad para frontend (más rápida de cargar)
-            max_width = 800
-            width_percent = max_width / img_original.width
-            new_height = int(img_original.height * width_percent)
-            img_baja = img_original.resize((max_width, new_height), Image.Resampling.LANCZOS)
-            img_baja.save(baja_calidad_path / original_filename, "JPEG", quality=70)
+            # Preparar datos del lote actual
+            batch_data = [
+                (page_num, img, str(originales_path), str(baja_calidad_path))
+                for page_num, img in enumerate(batch, start=batch_start + 1)
+            ]
             
-            image_list.append(original_filename)
+            # Procesar lote en paralelo
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = {
+                    executor.submit(process_image, img_data): page_num 
+                    for page_num, img_data in enumerate(batch_data, start=1)
+                }
+                
+                for future in as_completed(futures):
+                    try:
+                        filename, success, error = future.result()
+                        if success:
+                            image_list.append(filename)
+                            print(f"  ✓ {filename}")
+                        else:
+                            print(f"  ✗ Error: {error}")
+                    except Exception as e:
+                        print(f"  ✗ Error ejecutando tarea: {str(e)}")
+            
+            # Liberar memoria del lote procesado
+            del batch
+            import gc
+            gc.collect()
+            print(f"✅ Lote completado. Memoria liberada.")
         
         # Guardar estado del proyecto
         status_path = project_path / "status.json"
@@ -163,8 +252,7 @@ async def list_projects():
         
         return {
             "total": len(projects),
-            "projects": sorted(projects, key=lambda x: x["created_at"], reverse=True),
-            "current": current_project
+            "projects": sorted(projects, key=lambda x: x["created_at"], reverse=True)
         }
     
     except Exception as e:

@@ -46,8 +46,9 @@ class ProjectStatus(BaseModel):
 async def startup_event():
     global ocr_processor
     try:
-        ocr_processor = OCRProcessor(lang="es")
-        print("✅ OCR Processor inicializado")
+        # Inicializar con modelos rápidos y GPU si está disponible
+        ocr_processor = OCRProcessor(lang="es", use_fast_model=True, use_gpu=True)
+        print("✅ OCR Processor inicializado (modo rápido con GPU)")
     except Exception as e:
         print(f"❌ Error al inicializar OCR: {e}")
         
@@ -91,7 +92,7 @@ def process_ocr_background(project_name: str, json_filename: str):
         
         # Actualizar estado a "processing"
         with open(status_path, "w") as f:
-            json.dump({"status": "processing", "started_at": datetime.now().isoformat()}, f)
+            json.dump({"status": "processing", "started_at": datetime.now().isoformat(), "progress": "0%"}, f)
         
         # Leer el archivo JSON especificado
         json_path = project_path / json_filename
@@ -116,6 +117,8 @@ def process_ocr_background(project_name: str, json_filename: str):
         all_dfs = []
         total = len(lines_data)
         
+        print(f"🚀 Iniciando procesamiento de {total} imágenes...")
+        
         for idx, (filename, line_positions) in enumerate(lines_data.items(), 1):
             # Buscar imagen en carpeta originales (alta calidad)
             original_img = originales_path / filename
@@ -128,13 +131,14 @@ def process_ocr_background(project_name: str, json_filename: str):
                 print(f"⚠️  Sin líneas para: {filename}")
                 continue
             
-            # Procesar con OCR
+            # Procesar con OCR (con redimensionamiento para velocidad)
             try:
                 cortes = sorted(line_positions)
                 df_procesado, img_con_lineas = ocr_processor.procesar_imagen(
                     str(original_img), 
                     cortes=cortes, 
-                    line_gap=line_gap
+                    line_gap=line_gap,
+                    resize_for_ocr=True  # Redimensionar para ir más rápido
                 )
                 
                 # Guardar imagen procesada
@@ -142,7 +146,18 @@ def process_ocr_background(project_name: str, json_filename: str):
                 shutil.copy(img_con_lineas, str(output_img))
                 
                 all_dfs.append(df_procesado)
-                print(f"✅ Procesada {idx}/{total}: {filename}")
+                
+                # Actualizar progreso
+                progress = int((idx / total) * 100)
+                with open(status_path, "w") as f:
+                    json.dump({
+                        "status": "processing",
+                        "progress": f"{progress}%",
+                        "processed": idx,
+                        "total": total
+                    }, f)
+                
+                print(f"✅ [{progress}%] Procesada {idx}/{total}: {filename}")
                 
             except Exception as e:
                 print(f"❌ Error procesando {filename}: {e}")

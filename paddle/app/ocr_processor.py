@@ -7,13 +7,91 @@ import cv2
 import os
 
 
+def check_gpu_available():
+    """Verifica si GPU está realmente disponible"""
+    try:
+        import paddle
+        # Verificar si CUDA está disponible
+        gpu_available = paddle.device.cuda.is_available()
+        print(f"✓ GPU disponible: {gpu_available}")
+        return gpu_available
+    except Exception as e:
+        print(f"⚠️  No se pudo verificar GPU: {e}")
+        return False
+
+
 class OCRProcessor:
-    def __init__(self, lang="es"):
-        """Inicializa el procesador OCR"""
-        self.ocr = PaddleOCR(
-            use_doc_orientation_classify=False, use_doc_unwarping=False, lang=lang
-        )
-        pd.set_option("future.no_silent_downcasting", True)
+    def __init__(self, lang="es", use_fast_model=True, use_gpu=True):
+        """
+        Inicializa el procesador OCR con optimizaciones
+        
+        Args:
+            lang: Idioma a usar
+            use_fast_model: Usar modelos móviles más rápidos (PP-OCRv3_mobile)
+            use_gpu: Usar GPU si está disponible
+        """
+        # Verificar disponibilidad real de GPU
+        gpu_available = check_gpu_available() if use_gpu else False
+        actual_use_gpu = use_gpu and gpu_available
+        
+        print(f"🚀 Inicializando OCRProcessor (GPU: {actual_use_gpu}, FastModel: {use_fast_model})...")
+        
+        try:
+            if use_fast_model:
+                # Modelos móviles - 10x más rápidos pero ligeramente menos precisos
+                self.ocr = PaddleOCR(
+                    use_angle_cls=False,
+                    use_det=True,
+                    use_rec=True,
+                    use_cls=False,
+                    det_db_thresh=0.3,
+                    det_db_box_thresh=0.5,
+                    det_db_unclip_ratio=1.6,
+                    use_dilation=False,
+                    use_gpu=actual_use_gpu,
+                    enable_mkldnn=not actual_use_gpu,
+                    cpu_threads=8 if not actual_use_gpu else None,
+                    lang=lang,
+                    ocr_version="PP-OCRv3"
+                )
+            else:
+                # Modelos estándar - más precisos pero más lentos
+                self.ocr = PaddleOCR(
+                    use_angle_cls=False,
+                    use_det=True,
+                    use_rec=True,
+                    use_cls=False,
+                    use_gpu=actual_use_gpu,
+                    lang=lang
+                )
+            
+            self.use_fast_model = use_fast_model
+            self.use_gpu = actual_use_gpu
+            pd.set_option("future.no_silent_downcasting", True)
+            print("✅ OCRProcessor listo")
+            
+        except Exception as e:
+            print(f"❌ Error inicializando: {e}")
+            print("⚠️  Reintentando sin GPU...")
+            
+            try:
+                self.ocr = PaddleOCR(
+                    use_angle_cls=False,
+                    use_det=True,
+                    use_rec=True,
+                    use_cls=False,
+                    use_gpu=False,
+                    enable_mkldnn=True,
+                    cpu_threads=8,
+                    lang=lang
+                )
+                self.use_fast_model = use_fast_model
+                self.use_gpu = False
+                pd.set_option("future.no_silent_downcasting", True)
+                print("✅ OCRProcessor listo (modo CPU)")
+            except Exception as e2:
+                print(f"❌ Error crítico: {e2}")
+                raise
 
     def clean_text_simple(self, text):
         """Limpia y normaliza el texto"""
@@ -186,21 +264,56 @@ class OCRProcessor:
 
         return excel_df
 
-    def procesar_imagen(self, img_path, cortes=[120, 680, 800], line_gap=6.5):
-        """Procesa una imagen completa y retorna DataFrame y ruta de imagen con líneas"""
+    def procesar_imagen(self, img_path, cortes=[120, 680, 800], line_gap=6.5, resize_for_ocr=True):
+        """
+        Procesa una imagen completa y retorna DataFrame y ruta de imagen con líneas
+        
+        Args:
+            img_path: Ruta de la imagen
+            cortes: Posiciones X donde dividir columnas
+            line_gap: Espaciado vertical para agrupar líneas
+            resize_for_ocr: Redimensionar imagen para OCR más rápido (1200px ancho max)
+        """
+        # Redimensionar si la imagen es muy grande
+        if resize_for_ocr:
+            img_temp = cv2.imread(img_path)
+            if img_temp is not None:
+                h, w = img_temp.shape[:2]
+                if w > 1200:
+                    # Redimensionar pero mantener proporción
+                    scale = 1200 / w
+                    img_resized = cv2.resize(img_temp, (1200, int(h * scale)))
+                    # Guardar temporalmente
+                    temp_path = img_path.replace('.jpg', '_temp.jpg')
+                    cv2.imwrite(temp_path, img_resized)
+                    img_to_process = temp_path
+                else:
+                    img_to_process = img_path
+            else:
+                img_to_process = img_path
+        else:
+            img_to_process = img_path
+        
         # Ejecutar OCR
-        res = self.ocr.predict(img_path)
+        res = self.ocr.predict(img_to_process)
 
         # Convertir a DataFrame
         df = self.ocr_to_multidimensional_sections(
             res[0], line_gap=line_gap, cortes=cortes
         )
 
-        # Crear imagen con líneas
+        # Crear imagen con líneas (usar original)
         img_con_lineas = self.crear_imagen_con_lineas(img_path, cortes)
 
         # Procesar dataframe
         df_procesado = self.procesar_dataframe(df)
+        
+        # Limpiar temporal si se creó
+        if resize_for_ocr and img_to_process != img_path:
+            try:
+                os.remove(img_to_process)
+            except:
+                pass
 
         return df_procesado, img_con_lineas
 

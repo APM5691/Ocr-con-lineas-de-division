@@ -3,6 +3,7 @@ import Uploader from './components/Uploader';
 import ImageGrid from './components/ImageGrid';
 import FilterControls from './components/FilterControls';
 import { useLinesStore } from './hooks/useLinesStore';
+import { getBackendURL, getPaddleURL } from './config';
 import './App.css';
 
 function App() {
@@ -16,36 +17,87 @@ function App() {
   const { lines, exportJSON, loadLines, setImages: setStoreImages } = useLinesStore();
 
   useEffect(() => {
-    loadLastProject();
+    let isMounted = true;
+    
+    const load = async () => {
+      try {
+        console.log('Intentando cargar último proyecto desde', getBackendURL('/api/projects'));
+        
+        const response = await fetch(getBackendURL('/api/projects'));
+        
+        if (!response.ok) {
+          console.error('Error en respuesta:', response.status, response.statusText);
+          if (isMounted) setLoading(false);
+          return;
+        }
+        
+        const data = await response.json();
+        console.log('Proyectos obtenidos:', data);
+        
+        if (!isMounted) return;
+        
+        if (data.projects && data.projects.length > 0) {
+          const lastProject = data.projects[0]; // El primero está ordenado por más reciente
+          console.log('Cargando proyecto:', lastProject.name);
+
+          await loadProject(lastProject.name);
+        } else {
+          console.log('No hay proyectos disponibles');
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error cargando proyecto:', error);
+        if (isMounted) setLoading(false);
+      }
+    };
+    
+    load();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const loadLastProject = async () => {
+  const loadProject = async (projectName) => {
     try {
-      const response = await fetch('http://localhost:5000/api/projects');
-      const data = await response.json();
+      console.log(`Estableciendo proyecto activo: ${projectName}`);
       
-      if (data.projects.length > 0) {
-        const lastProject = data.projects[data.projects.length - 1];
-        await loadProject(lastProject);
+      const response = await fetch(getBackendURL(`/api/set-project/${projectName}`), {
+        method: 'POST'
+      });
+      
+      if (!response.ok) {
+        console.error('Error al establecer proyecto:', response.status, response.statusText);
+        setLoading(false);
+        return;
       }
+      
+      const data = await response.json();
+      console.log('Proyecto cargado:', data);
+      console.log('Imágenes recibidas:', data.images);
+      
+      const projectImages = data.images || [];
+      setImages(projectImages);
+      setFilteredImages(projectImages);
+      setProjectName(data.project);
+      setStoreImages(projectImages);
+      
+      // Las líneas pueden venir en dos formatos:
+      // 1. Si es un JSON exportado: { lines: {...}, line_gap: 6.5, exported_at: "...", total_lines: N }
+      // 2. Si es un objeto simple: { img_001.jpg: [10, 20], ... }
+      const projectLines = data.lines || {};
+      const linesToLoad = projectLines.lines || projectLines;
+
+      console.log('Datos cargados:', { projectImages, projectLines, linesToLoad });
+
+      loadLines(linesToLoad);
+      
+      setLoading(false);
+      console.log(`✓ Proyecto '${data.project}' cargado con ${projectImages.length} imágenes y ${Object.keys(linesToLoad).length} imágenes con líneas`);
     } catch (error) {
       console.error('Error cargando proyecto:', error);
-    } finally {
       setLoading(false);
     }
-  };
-
-  const loadProject = async (projectName) => {
-    const response = await fetch(`http://localhost:5000/api/set-project/${projectName}`, {
-      method: 'POST'
-    });
-    const data = await response.json();
-    
-    setImages(data.images);
-    setFilteredImages(data.images);
-    setProjectName(data.project);
-    setStoreImages(data.images);
-    loadLines(data.lines);
   };
 
   const handleUploadSuccess = (data) => {
@@ -68,6 +120,35 @@ function App() {
     setFilterActive(false);
   };
 
+  const handleExport = async () => {
+    if (!projectName) {
+      alert('No hay proyecto activo');
+      return;
+    }
+
+    try {
+      const response = await fetch(getBackendURL('/api/export-lines'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lines: lines,
+          line_gap: 6.5
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error exportando: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('Líneas exportadas:', data);
+      alert(`✅ Líneas exportadas correctamente\nTotal: ${data.total_lines} líneas`);
+    } catch (error) {
+      console.error('Error al exportar:', error);
+      alert(`❌ Error exportando líneas: ${error.message}`);
+    }
+  };
+
   const handleProcessOCR = async () => {
     if (!projectName) {
       alert('No hay proyecto activo');
@@ -81,7 +162,7 @@ function App() {
       // Paso 1: Iniciar procesamiento OCR
       console.log(`Iniciando OCR para proyecto: ${projectName}`);
       
-      const processResponse = await fetch('http://localhost:8000/api/process', {
+      const processResponse = await fetch(getPaddleURL('/api/process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -110,7 +191,7 @@ function App() {
         attempts++;
 
         const statusResponse = await fetch(
-          `http://localhost:8000/api/process-status/${projectName}`
+          getPaddleURL(`/api/process-status/${projectName}`)
         );
 
         if (statusResponse.ok) {
@@ -154,7 +235,7 @@ function App() {
   const downloadExcel = async (project) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/api/download-excel/${project}`
+        getPaddleURL(`/api/download-excel/${project}`)
       );
 
       if (!response.ok) {
@@ -202,7 +283,8 @@ function App() {
       {loading ? (
         <div className="uploader">
           <div className="upload-box">
-            <h2>Cargando...</h2>
+            <h2>Cargando últimos proyectos...</h2>
+            <p>Conectando a http://localhost:5000/api/projects</p>
           </div>
         </div>
       ) : images.length === 0 ? (

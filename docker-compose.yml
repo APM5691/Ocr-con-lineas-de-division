@@ -19,18 +19,13 @@ services:
 
   # Paddle OCR con Jupyter (GPU + API) - Puerto 8000 y 8888
   paddle:
-    build:
-      context: ./paddle
-      dockerfile: Dockerfile
-    container_name: paddle-ocr-workspace
+    image: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+    container_name: jupyter-pytorch-runpod
     restart: unless-stopped
     ports:
-      - "8000:8000"
       - "8888:8888"
     volumes:
       - ./paddle/workspace:/workspace
-      - ./paddle/uploads:/workspace/uploads
-      - ./paddle/outputs:/workspace/outputs
     working_dir: /workspace
     deploy:
       resources:
@@ -41,14 +36,12 @@ services:
               capabilities: [gpu]
     environment:
       - TZ=America/Mexico_City
-      - JUPYTER_TOKEN=
-      - JUPYTER_ENABLE_LAB=yes
-      - PYTHONUNBUFFERED=1
+      - JUPYTER_TOKEN= # vacío para no pedir token
+      - JUPYTER_ENABLE_LAB=yes # asegura que se abra JupyterLab
     command: >
-      bash -c "pip install --quiet paddleocr paddlepaddle-gpu &&
+      bash -c "pip install --quiet ipywidgets matplotlib pandas numpy &&
                jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
-               --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace &
-               uvicorn app.api:app --host 0.0.0.0 --port 8000"
+               --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace"
 
   # Frontend (Nginx) - Puerto 80
   frontend:
