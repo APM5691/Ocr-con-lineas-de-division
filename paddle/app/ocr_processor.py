@@ -140,11 +140,13 @@ def detectar_marcas_modelos(
 
 
 def separar_anio_y_resto(texto):
-    """Separa año del resto del texto"""
+    """Separa año del resto del texto, devolviendo el original si falla"""
+    print(texto)
     if pd.isna(texto) or texto == "":
         return pd.Series([np.nan, ""])
 
     texto_str = str(texto).strip()
+    texto_original = texto_str  # Guardar original para fallback
 
     # Patrón 1: Año con trimestre (2023Q2)
     match = re.match(r"^(\d{4})Q\d+", texto_str, re.IGNORECASE)
@@ -163,7 +165,9 @@ def separar_anio_y_resto(texto):
     if match:
         return pd.Series([match.group(1), ""])
 
-    return pd.Series([np.nan, texto_str])
+    # Fallback: Si no coincide ningún patrón, devolver texto original
+    logger.warning(f"⚠️ No se detectó patrón en '{texto_str}', devolviendo original")
+    return pd.Series([np.nan, texto_original])
 
 
 # Configurar logging
@@ -438,12 +442,27 @@ class OCRProcessor:
                         texto.strip() if texto_upper != modelo_actual else np.nan
                     )
                 else:
-                    versiones.append(np.nan)
+                    versiones.append(texto)
+
             df["version"] = versiones
 
-            # 6. Agregar valores originales
-            df["valor_c"] = df.iloc[:, 2] if len(df.columns) > 2 else np.nan
-            df["valor_d"] = df.iloc[:, 3] if len(df.columns) > 3 else np.nan
+            print(df.iloc[:, 3])
+            valor_original = df.iloc[:, 3]
+
+            # Separar por espacios (máximo 2 partes: n=1)
+            valor_cortado = valor_original.astype(str).str.split(" ", n=1)
+            print(valor_cortado)
+
+            # 6. Agregar valores originales y separar por espacio
+            valor_c_col = valor_cortado.apply(
+                lambda x: x[0].strip() if len(x) > 0 else None
+            )
+            valor_d_col = valor_cortado.apply(
+                lambda x: x[1].strip() if len(x) > 1 else None
+            )
+
+            df["valor_c"] = valor_c_col
+            df["valor_d"] = valor_d_col
 
             # 7. Reordenar columnas
             columnas_base = ["marca", "modelo", "año", "version", "valor_c", "valor_d"]
