@@ -1,1 +1,0 @@
-# Paddle OCR App Package

@@ -1,56 +1,57 @@
 services:
   # Frontend (Nginx) - Puerto 80
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: ocr-frontend
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    environment:
-      - TZ=America/Mexico_City
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: ocr-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - backend
+  #   environment:
+  #     - TZ=America/Mexico_City
 
   # Backend OCR (FastAPI) - Puerto 5000
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: ocr-backend
-    restart: unless-stopped
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./data:/app/storage
-    working_dir: /app
-    environment:
-      - TZ=America/Mexico_City
-      - FLASK_ENV=production
-      - PYTHONUNBUFFERED=1
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: ocr-backend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5000:5000"
+  #   volumes:
+  #     - ./data:/app/storage
+  #   working_dir: /app
+  #   environment:
+  #     - TZ=America/Mexico_City
+  #     - FLASK_ENV=production
+  #     - PYTHONUNBUFFERED=1
 
-  ocr-service:
-    build:
-      context: ./paddle
-      dockerfile: Dockerfile
-    container_name: ocr-service
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./data:/app/storage
-    working_dir: /app
-    environment:
-      - TZ=America/Mexico_City
-      - PYTHONUNBUFFERED=1
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+  # ocr-service:
+  #   build:
+  #     context: ./paddle
+  #     dockerfile: Dockerfile
+  #   container_name: ocr-service
+  #   restart: unless-stopped
+  #   cpus: 16
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./data:/app/storage
+  #   working_dir: /app
+  #   environment:
+  #     - TZ=America/Mexico_City
+  #     - PYTHONUNBUFFERED=1
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
 
   # php-imitar:
   #   image: php:8.2-apache
@@ -64,28 +65,30 @@ services:
   #     docker-php-ext-install pdo pdo_pgsql && 
   #     apache2-foreground"
 
-  # # # Paddle OCR con Jupyter (GPU + API) - Puerto 8000 y 8888
-  # paddle:
-  #   image: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
-  #   container_name: jupyter-pytorch-runpod
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8888:8888"
-  #   volumes:
-  #     - ./paddle/workspace:/workspace
-  #   working_dir: /workspace
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
-  #   environment:
-  #     - TZ=America/Mexico_City
-  #     - JUPYTER_TOKEN= # vacío para no pedir token
-  #     - JUPYTER_ENABLE_LAB=yes # asegura que se abra JupyterLab
-  #   command: >
-  #     bash -c "pip install --quiet ipywidgets matplotlib pandas numpy &&
-  #              jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
-  #              --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace"
+  # # Paddle OCR con Jupyter (GPU + API) - Puerto 8000 y 8888
+  paddle:
+    image: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+    container_name: jupyter-pytorch-runpod
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./paddle/app:/workspace
+      - ./data/projects/proyecto_20251209_122502/originales:/workspace/imagenes
+    working_dir: /workspace
+    cpus: 16
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - TZ=America/Mexico_City
+      - JUPYTER_TOKEN= # vacío para no pedir token
+      - JUPYTER_ENABLE_LAB=yes # asegura que se abra JupyterLab
+    command: >
+      bash -c "pip install --quiet ipywidgets matplotlib pandas numpy &&
+               jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+               --NotebookApp.token='' --NotebookApp.password='' --notebook-dir=/workspace"
